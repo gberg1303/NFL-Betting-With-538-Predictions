@@ -10,7 +10,7 @@ nflfastR::teams_colors_logos
 NFL_Predictions_FiveThirtyEight <- read_csv("https://raw.githubusercontent.com/fivethirtyeight/checking-our-work-data/master/nfl_games.csv")
 
 ### Load Past Odds
-NFL_Odds <- readxl::read_xlsx("/Users/jonathangoldberg/Google Drive/Random/Sports/Betting/538 Formula/nfl.xlsx") %>%
+NFL_Odds <- readxl::read_xlsx("/Users/jonathangoldberg/Google Drive/Random/Sports/Betting/NFL Betting - 538 Predictions/nfl.xlsx") %>%
   clean_names() %>%
   filter(!is.na(date)) %>%
   merge(y = teams_colors_logos %>% select(team_name, team_nick), by.x = "home_team", by.y = "team_name", all.x = TRUE, all.y = FALSE) %>%
@@ -46,6 +46,7 @@ Bets <- Predictions_Odds %>%
 ### Lets first try to see if simple $10 bets are profitable before going any more complex
 Bets <- Bets %>%
   filter(Win_Prob_Difference > .05) %>% # Ensure that there is a pretty decent margin between odds and the outcome
+  #filter(prob1 > .5) # only bet the favorites
   mutate(Money_Made = ifelse(prob1_outcome == 1, 10*home_odds_close-10, -10))
 sum(Bets$Money_Made)
 
