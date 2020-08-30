@@ -18,42 +18,40 @@ NFL_Odds <- readxl::read_xlsx("/Users/jonathangoldberg/Google Drive/Random/Sport
          away_odds_close = ifelse(is.na(away_odds_close) == TRUE, away_odds_open, away_odds_close))
 
 ### Merge the Two
-Predictions_Odds <- merge(x = NFL_Odds %>% select(date, team_nick, home_odds_close, away_odds_close), 
-                          y = NFL_Predictions_FiveThirtyEight, 
+Predictions_Odds <- merge(x = NFL_Odds %>% select(date, team_nick, home_odds_close, away_odds_close),
+                          y = NFL_Predictions_FiveThirtyEight,
                           by.x = c("date", "team_nick"),
                           by.y = c("date", "team1"),
                           all.x = FALSE,
                           all.y = TRUE) %>%
   unique() %>% # Remove Duplicates
   mutate(home_odds_close_probability = 1/home_odds_close,
-         away_odds_close_probability = 1/away_odds_close) # Turn Decimal Into Probabilities
+         away_odds_close_probability = 1/away_odds_close) %>% # Turn Decimal Into Probabilities
+  mutate(prediction = ifelse(prob1 > .5, 1, 0),
+         correct = ifelse(prediction == prob1_outcome, 1, 0))
 
-
-### Select Cases where 538 Prediction finds an optimal bet to be made 
+### Select Cases where 538 Prediction finds an optimal bet to be made
 Bets <- Predictions_Odds %>%
   mutate(Home_Bet = ifelse(prob1 > home_odds_close_probability, 1, 0),
-         Away_Bet = ifelse(prob2 > away_odds_close_probability, 1, 0)) %>%
+         Away_Bet = ifelse(prob2 > away_odds_close_probability, 1, 0),
+         Away_Bet = ifelse(Home_Bet == 1, 0, Away_Bet)) %>%
   filter(Home_Bet == 1 | Away_Bet == 1) %>%
   mutate(date = as.Date(date)) %>%
-  mutate(Win_Prob_Difference = prob1 - home_odds_close_probability) %>%
-  # This part is tricky. To ensure that everything flowed well, I simply assigned away probabilities and attributes to the home columns. 
-  mutate(Win_Prob_Difference = ifelse(Away_Bet == 1, prob2 - away_odds_close_probability, Win_Prob_Difference),
-         home_odds_close = ifelse(Away_Bet == 1, away_odds_close, home_odds_close),
-         home_odds_close_probability = ifelse(Away_Bet == 1, away_odds_close_probability, home_odds_close_probability),
-         prob1_outcome = ifelse(Away_Bet == 1, prob2_outcome, prob1_outcome),
-         prob1 = ifelse(Away_Bet == 1, prob2, prob1))
+  mutate(Win_Prob_Difference = prob1 - home_odds_close_probability)
 
 ### Lets first try to see if simple $10 bets are profitable before going any more complex
 Bets <- Bets %>%
-  filter(Win_Prob_Difference > .05) %>% # Ensure that there is a pretty decent margin between odds and the outcome
-  #filter(prob1 > .5) # only bet the favorites
-  mutate(Money_Made = ifelse(prob1_outcome == 1, 10*home_odds_close-10, -10))
+  #filter(Win_Prob_Difference > .05 | Win_Prob_Difference < -.05) %>% # Ensure that there is a pretty decent margin between odds and the outcome
+  filter(prob1 > .5) %>% # only bet the favorites
+  mutate(Money_Made = 0,
+         Money_Made = ifelse(Home_Bet == 1 & correct == 1, 10*home_odds_close-10, -10),
+         Money_Made = ifelse(Away_Bet == 1 & correct == 1, 10*away_odds_close-10, -10))
 sum(Bets$Money_Made)
 
 ### It turns out to be pretty profitable. Now lets try with the Kelly Criterion
 Kelly_Bets <- Bets %>%
   arrange(date) %>%
-  group_by(date) %>% 
+  group_by(date) %>%
   mutate(Week_Difference_Rank = rank(desc(Win_Prob_Difference))) %>%
   filter(Week_Difference_Rank == 1) %>%
   mutate(Bankroll_Before = 100,
@@ -63,7 +61,7 @@ Kelly_Bets <- Bets %>%
          Bankroll_After = Bankroll_Before+Money_Made,
          Stash_Before = 0,
          Stash_After = 0,
-         Total_Cash = Bankroll_Before) 
+         Total_Cash = Bankroll_Before)
 
 # Run a For Loop to Update Each Row with Bet Result
 for(x in 2:nrow(Kelly_Bets)){
@@ -75,7 +73,7 @@ for(x in 2:nrow(Kelly_Bets)){
   Kelly_Bets$Stash_After[x] <- Kelly_Bets$Stash_Before[x]
   if(Kelly_Bets$Bankroll_After[x] > 200){
   Kelly_Bets$Bankroll_After[x] <- Kelly_Bets$Bankroll_After[x]-50
-  Kelly_Bets$Stash_After[x] <- Kelly_Bets$Stash_After[x]+50 
+  Kelly_Bets$Stash_After[x] <- Kelly_Bets$Stash_After[x]+50
   }
   if(Kelly_Bets$Bankroll_After[x] < 50 & Kelly_Bets$Stash_Before[x] >= 25){
     Kelly_Bets$Bankroll_After[x] <- Kelly_Bets$Bankroll_After[x]+25
@@ -89,12 +87,12 @@ for(x in 2:nrow(Kelly_Bets)){
 }
 
 ### Complete the Bet Sheet
-Kelly_Bets <- merge(Bets %>% select(-Win_Prob_Difference, Money_Made), 
+Kelly_Bets <- merge(Bets %>% select(-Win_Prob_Difference, Money_Made),
                     Kelly_Bets %>% select(date, team_nick, Bankroll_Before, Bet_Size, Bet, Bankroll_After, Stash_Before, Stash_After, Total_Cash),
                     by = c("date", "team_nick"),
                     all.x = FALSE,
                     all.y = TRUE)
-                    
+
 
 ### Graph Total Cash Over Time
 Kelly_Bets %>%
